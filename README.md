@@ -14,7 +14,7 @@
 | 模块               | 技术选型                                         |
 | ------------------ | ------------------------------------------------ |
 | 数据获取           | `feedparser` + `requests`                       |
-| 语音识别（备选）   | `openai-whisper` (本地)                          |
+| 语音识别          | `openai-whisper` (本地)                          |
 | AI 分析与结构化    | DeepSeek API                                     |
-| 音频处理           | `pydub` + `ffmpeg` + `webrtcvad`                |
+| 音频处理           | `pydub` + `ffmpeg`                |
 | 笔记存储           | Obsidian `.md` 文件 |
