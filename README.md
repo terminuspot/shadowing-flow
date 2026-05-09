@@ -18,3 +18,22 @@
 | AI 分析与结构化    | DeepSeek API                                     |
 | 音频处理           | `pydub` + `ffmpeg`                |
 | 笔记存储           | Obsidian `.md` 文件 |
+
+📂 Output Example
+## 🎙️ Apple & Intel Chip Deal
+**⏱️ Time:** 30.8s → 46.08s  
+**🔊 Audio:** ![[clip1.mp3]]
+**Chunked Text:** We exclusively report / that Apple and Intel / have reached a preliminary agreement...
+**Practice Focus:** Stress on 'exclusively', chunked pauses for clarity.
+
+🚀 Quick Start
+`
+git clone https://github.com/yourusername/shadowing-flow.git
+cd shadowing-flow
+uv sync
+cp .env.example .env   # add your DEEPSEEK_API_KEY
+python main.py
+`
+
+🤝 License
+MIT
