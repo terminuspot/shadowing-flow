@@ -1,0 +1,38 @@
+name: Shadowing Flow Auto Run
+
+# 触发条件：当你 push 代码，或者手动点击运行
+on:
+  schedule:
+    # 每天北京时间 08:00 准时运行 (UTC 00:00)
+    - cron: "0 0 * * *"
+  workflow_dispatch: # 允许你在 GitHub 页面上手动点击按钮运行
+
+jobs:
+  run-shadowing-script:
+    runs-on: ubuntu-latest # 使用最新的 Linux 环境
+
+    steps:
+      # 1. 拉取你的代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 安装 uv (这是最关键的一步，比普通 Python 部署快得多)
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true # 开启缓存，让下次运行更快
+          cache-dependency-glob: "uv.lock"
+
+      # 3. 设置 Python 环境并安装依赖
+      - name: Set up Python
+        run: uv python install
+
+      - name: Sync dependencies
+        run: uv sync
+
+      # 4. 执行脚本
+      - name: Run Shadowing Script
+        env:
+          # 将 GitHub Secrets 映射给脚本里的 os.getenv("DEEPSEEK_API_KEY")
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: uv run main.py # 替换成你的实际脚本名
