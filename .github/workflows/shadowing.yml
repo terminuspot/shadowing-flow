@@ -2,9 +2,9 @@ name: Shadowing Flow Auto Run
 
 # 触发条件：当你 push 代码，或者手动点击运行
 on:
-  push:
-      branches:
-        - main # 你可以根据需要修改成其他分支
+  # push:
+  #     branches:
+  #       - main # 你可以根据需要修改成其他分支
   # schedule:
     # 每天北京时间 08:00 准时运行 (UTC 00:00)
     # - cron: "0 0 * * *"
