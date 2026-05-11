@@ -180,7 +180,7 @@ def process_audio_and_markdown(
 
     # 生成文件名或标题
     today_chinese = datetime.now().strftime("%Y年%-m月%-d日")
-    md_content = [text_title]
+    md_content = [f"# {text_title}"]
     md_content.append("\n---")
     md_content.append(f">核心主题：{snippets_info.get('episode_theme', '未知')}")
     md_content.append(
