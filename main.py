@@ -28,7 +28,7 @@ def main():
     audio_path = fetcher.fetch_audio(episode_info["audio_url"])
     transcript, segments = fetcher.transcribe_audio_with_whisper(audio_path)
 
-    # logging.info(f"生成的文稿:\n{transcript}")
+    logging.info(f"生成的文稿:\n{transcript}")
     # 步骤 3：把文稿发给 DeepSeek 提取 Shadowing 学习片段
     snippets_info = cliper.generate_shadowing_script(transcript)
     logging.info(f"Shadowing 片段: {snippets_info}")

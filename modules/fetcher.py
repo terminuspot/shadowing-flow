@@ -91,7 +91,11 @@ def transcribe_audio_with_whisper(audio_path):
 
     logging.info("正在进行语音转文字并提取时间戳...")
     result = model.transcribe(
-        str(audio_path), fp16=False
+        str(audio_path),
+        fp16=False,
+        beam_size=5,
+        no_speech_threshold=0.4,
+        word_timestamps=False,
     )  # 禁用 fp16 以避免某些 GPU 上的兼容性问题
     transcript_text = ""
 
