@@ -26,7 +26,7 @@ def main():
     episode_info = fetcher.fetch_latest_podcast(WSJ_RSS_URL)
     # 步骤 2：下载音频文件，用本地 Whisper 听写音频，生成带时间戳的精准文稿
     audio_path = fetcher.fetch_audio(episode_info["audio_url"])
-    transcript, segments = fetcher.transcribe_audio_with_whisper(audio_path)
+    transcript, segments = fetcher.transcribe_audio_with_whisperx(audio_path)
 
     logging.info(f"生成的文稿:\n{transcript}")
     # 步骤 3：把文稿发给 DeepSeek 提取 Shadowing 学习片段

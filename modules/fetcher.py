@@ -6,6 +6,8 @@ import feedparser
 import logging
 import requests
 
+import torch
+import whisperx
 import whisper
 from typing import cast, List, Dict, Any
 from pathlib import Path
@@ -112,4 +114,56 @@ def transcribe_audio_with_whisper(audio_path):
         transcript_text += f"[Line {idx + 1}] [{start} - {end}] {text}\n"
 
     logging.info("文稿解析完成！")
+    return transcript_text, segments
+
+
+def transcribe_audio_with_whisperx(audio_path):
+    # ----- 1. 设备自适应 + 合理的 batch_size -----
+    # Mac 上 torch.cuda.is_available() 必为 False，自动走 CPU 分支
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # CPU 用 int8 省内存，Apple Silicon 上也稳定
+    compute_type = "float16" if torch.cuda.is_available() else "int8"
+
+    # 建议 1~4，默认 16 对 CPU 负担太大
+    batch_size = 4 if device == "cpu" else 16
+
+    logging.info(
+        f"启动 WhisperX (设备: {device}, 计算类型: {compute_type}, batch_size: {batch_size})"
+    )
+
+    # 2. 加载模型（首次会自动下载 base 模型）
+    model = whisperx.load_model("base", device, compute_type=compute_type)
+
+    logging.info("正在进行初步转录...")
+    audio = whisperx.load_audio(str(audio_path))
+    result = model.transcribe(audio, batch_size=batch_size)
+
+    language_code = result["language"]
+
+    # 3. 强制对齐（这一步在 CPU 上会慢一些，但精度极高）
+    logging.info(f"加载对齐模型 (语言: {language_code})...")
+    model_a, metadata = whisperx.load_align_model(
+        language_code=language_code, device=device
+    )
+
+    logging.info("正在执行强制对齐以修正时间轴...")
+    result_aligned = whisperx.align(
+        result["segments"],
+        model_a,
+        metadata,
+        audio,
+        device,
+        return_char_alignments=False,
+    )
+
+    segments = cast(List[Dict[str, Any]], result_aligned.get("segments", []))
+
+    # 4. 格式化输出（保留毫秒级精度）
+    transcript_text = ""
+    for idx, segment in enumerate(segments):
+        start = round(float(segment.get("start", 0)), 3)
+        end = round(float(segment.get("end", 0)), 3)
+        text = segment.get("text", "").strip()
+        transcript_text += f"[Line {idx + 1}] [{start} - {end}] {text}\n"
+
     return transcript_text, segments
