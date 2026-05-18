@@ -79,6 +79,53 @@ SYSTEM_PROMPT = """你是一名英语语音训练专家。请从以下带时间�
 }
 """
 
+PROMPT_JOURNAL = """
+你是一名英语语音与商业叙事训练专家。请从以下带时间戳的《The Journal.》播客转录文本中，筛选出 1-2 段最适合 Shadowing（影子跟读）的黄金片段。
+
+【核心目标】
+聚焦于【叙事连贯性（Storytelling Flow）】、【意群停顿（Chunking）】与【戏剧性重音（Conversational Stress）】，帮助学生建立高级、有说服力的美式商务口语语感。
+
+【执行步骤与筛选标准】
+1. **深度主题归纳**：
+    - 设定本期故事的核心冲突 `episode_theme`，必须严格执行格式：`[英文词组: 中文概括]`
+    - 要求：由于《The Journal.》是叙事型播客，主题必须体现商业事件背后的“戏剧冲突”或“人性/利益博弈”，严禁平铺直叙。
+    - 示例：✅ [Behind the Curtain: 独角兽神话的轰然倒塌] ❌ [Tech News: 某公司发布新AI模型]
+
+2. **Shadowing 片段筛选（硬性指标）**：
+    - 时长：严格控制在 **25~45 秒** 之间。
+    - 文本偏好：优先选择主持人进行**事件转折、深度评论、因果论证**或**讲故事高潮**的段落。
+    - 词汇偏好：必须富含高级口语连接词（如 "And that's when...", "Here is the catch...", "But it turns out..."）或高频商务表达。
+    - 避开：纯数据罗列、长串人名地名、广告口播、多人口音混杂的采访录音。
+
+3. **双版本文本处理（防止时间轴漂移）**：
+    - **智能纠错**：结合语境自动修复 ASR 语音转文字带来的明显语法或语义错词。
+    - `raw_text`：修复错词后的纯净原文，不带任何斜杠。作为脚本时间轴匹配的唯一基准。
+    - `shadowing_text`：在 raw_text 基础上加入 '/' 划分意群（Thought Groups）。每个意群 3-7 词。
+    - 【断句禁令】：严禁拆散紧密的语法结构（如动词短语、介词短语不可从中间切断）。
+        示例：✅ "But inside the company, / tensions were building. /" 
+            ❌ "But inside the / company, tensions / were building. /"
+
+【输出要求】
+- 仅输出 JSON，禁止代码块外的文字。格式如下：
+
+{
+    "episode_theme": "[英文词组: 中文概括]",
+    "snippets": [
+        {
+            "topic_tag": "子话题标签",
+            "title": "6字内标题",
+            "start_line_id": 12,   // 必须为整数，如选中的起始行是 [Line 12]
+            "end_line_id": 18,     // 必须为整数，如选中的结束行是 [Line 18]
+            "raw_text": "修复错词后的连续原文段落（作为时间轴校验基准）",
+            "chunked_text": "带 '/' 的意群划分文本。每个意群 3-7 词，逻辑连贯。",
+            "key_phrases": ["短语1", "短语2"],
+            "practice_focus": "指出核心重音词，说明如何通过停顿和重音增强说服力。"
+        }
+    ]
+}
+
+"""
+
 # Obsidian Markdown 模板
 MD_TEMPLATE = """
 ## 🎙️ {topic_tag} {title}
@@ -98,7 +145,7 @@ MD_TEMPLATE = """
 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_API_URL)
 
 
-def generate_shadowing_script(transcript: str):
+def generate_shadowing_script(transcript: str, weekday: int):
     """调用 DeepSeek 提取适合 Shadowing 的片段，并强制返回 JSON 格式"""
     logging.info("正在调用 DeepSeek API 分析文稿...")
 
@@ -106,7 +153,10 @@ def generate_shadowing_script(transcript: str):
         response = client.chat.completions.create(
             model=DEEPSEEK_MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT if weekday in [6, 0] else PROMPT_JOURNAL,
+                },
                 {"role": "user", "content": transcript},
             ],
             response_format={"type": "json_object"},  # 强制返回 JSON
@@ -183,9 +233,7 @@ def process_audio_and_markdown(
     md_content = [f"# {text_title}"]
     md_content.append("\n---")
     md_content.append(f">核心主题：{snippets_info.get('episode_theme', '未知')}")
-    md_content.append(
-        ">新闻来源：WSJ Tech News Briefing | 仅供英语听说与 Shadowing 练习分享"
-    )
+    md_content.append(">新闻来源：WSJ Podcasts | 仅供英语听说与 Shadowing 练习分享")
     md_content.append(f">整理日期：{today_chinese}")
     md_content.append("---\n")
 
