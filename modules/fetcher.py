@@ -4,10 +4,9 @@ from urllib.parse import urlparse
 
 import feedparser
 import logging
+import mlx_whisper
 import requests
 
-import torch
-import whisperx
 import whisper
 from typing import cast, List, Dict, Any
 from pathlib import Path
@@ -117,53 +116,76 @@ def transcribe_audio_with_whisper(audio_path):
     return transcript_text, segments
 
 
-def transcribe_audio_with_whisperx(audio_path):
-    # ----- 1. 设备自适应 + 合理的 batch_size -----
-    # Mac 上 torch.cuda.is_available() 必为 False，自动走 CPU 分支
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    # CPU 用 int8 省内存，Apple Silicon 上也稳定
-    compute_type = "float16" if torch.cuda.is_available() else "int8"
+def transcribe_audio_with_whisper_mlx(audio_path):
+    """使用 MLX Whisper 模型生成带时间戳的文稿 (Mac 专属硬件加速)"""
 
-    # 建议 1~4，默认 16 对 CPU 负担太大
-    batch_size = 4 if device == "cpu" else 16
+    # MLX Whisper 推荐直接使用 Hugging Face 上的 mlx 优化格式模型
+    # 这里对应你原本的 "base" 模型
+    model_id = "mlx-community/whisper-base-mlx"
 
-    logging.info(
-        f"启动 WhisperX (设备: {device}, 计算类型: {compute_type}, batch_size: {batch_size})"
+    logging.info(f"正在启动 MLX Whisper 模型 ({model_id}) 进行语音识别...")
+
+    # mlx-whisper.transcribe 会自动处理模型的加载、缓存和 Metal GPU 调度
+    result = mlx_whisper.transcribe(
+        str(audio_path),
+        path_or_hf_repo=model_id,
+        word_timestamps=True,
+        # 注意：MLX 会自动且完美地使用 Mac GPU 的混合精度 (fp16/bf16)
+        # 所以我们不需要像原版那样写 fp16=False 来规避兼容性问题
     )
 
-    # 2. 加载模型（首次会自动下载 base 模型）
-    model = whisperx.load_model("base", device, compute_type=compute_type)
-
-    logging.info("正在进行初步转录...")
-    audio = whisperx.load_audio(str(audio_path))
-    result = model.transcribe(audio, batch_size=batch_size)
-
-    language_code = result["language"]
-
-    # 3. 强制对齐（这一步在 CPU 上会慢一些，但精度极高）
-    logging.info(f"加载对齐模型 (语言: {language_code})...")
-    model_a, metadata = whisperx.load_align_model(
-        language_code=language_code, device=device
-    )
-
-    logging.info("正在执行强制对齐以修正时间轴...")
-    result_aligned = whisperx.align(
-        result["segments"],
-        model_a,
-        metadata,
-        audio,
-        device,
-        return_char_alignments=False,
-    )
-
-    segments = cast(List[Dict[str, Any]], result_aligned.get("segments", []))
-
-    # 4. 格式化输出（保留毫秒级精度）
+    # --- 新增的按句子合并逻辑 ---
+    merged_segments = []
+    current_start = None
+    current_text = ""
     transcript_text = ""
-    for idx, segment in enumerate(segments):
-        start = round(float(segment.get("start", 0)), 3)
-        end = round(float(segment.get("end", 0)), 3)
+
+    # 这里的逻辑与原版完全保持一致，因为 MLX 返回的字典结构和原版 100% 相同
+    segments = cast(List[Dict[str, Any]], result.get("segments", []))
+
+    for segment in segments:
+        # 去除文字前后的空格
         text = segment.get("text", "").strip()
+        if not text:
+            continue
+
+        start = float(segment.get("start", 0))
+        end = float(segment.get("end", 0))
+
+        # 如果是新句子的开头，记录起始时间
+        if current_start is None:
+            current_start = start
+
+        # 拼接文本（英文单词之间加空格）
+        current_text = current_text + " " + text if current_text else text
+
+        # 核心逻辑：如果当前片段的结尾是终结标点符号，就打包这一句！
+        if text.endswith((".", "?", "!", "。", "？", "！")):
+            merged_segments.append(
+                {"start": current_start, "end": end, "text": current_text}
+            )
+            # 重置状态，准备拼接下一句
+            current_start = None
+            current_text = ""
+
+    # 兜底逻辑：如果最后一段音频说完了但没有标点符号，也要强行打包
+    if current_text:
+        merged_segments.append(
+            {
+                "start": current_start,
+                "end": float(segments[-1].get("end", 0)),
+                "text": current_text,
+            }
+        )
+
+    # --- 重新格式化输出 ---
+    for idx, segment in enumerate(merged_segments):
+        start = round(float(segment.get("start", 0)), 2)
+        end = round(float(segment.get("end", 0)), 2)
+        text = segment.get("text", "")
+
+        # 输出格式保持不变：[Line 5] [12.5 - 15.0] The company reported...
         transcript_text += f"[Line {idx + 1}] [{start} - {end}] {text}\n"
 
-    return transcript_text, segments
+    logging.info("文稿解析完成！")
+    return transcript_text, merged_segments

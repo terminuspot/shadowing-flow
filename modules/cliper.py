@@ -30,7 +30,7 @@ MD_OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 CLIP_OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
 # 系统 Prompt
-SYSTEM_PROMPT = """你是一名英语语音训练专家。请从以下带时间戳的播客转录文本中，筛选 3-4 段最适合 Shadowing 的片段。
+SYSTEM_PROMPT = """你是一名英语语音训练专家。请从以下带时间戳的播客转录文本中，筛选 3-4 段最适合 Shadowing 的片段，每段时长控制在 20-40 秒。
 
 【核心目标】
 训练重点切忌追求完美的美式发音或复杂的连读，而是必须聚焦于【意群停顿（Chunking）】与【逻辑重音（Stress）】，以英语表达的清晰度与专业感。
