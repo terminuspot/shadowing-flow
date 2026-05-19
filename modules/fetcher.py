@@ -1,5 +1,7 @@
 from datetime import datetime
 import os
+import re
+import subprocess
 from urllib.parse import urlparse
 
 import feedparser
@@ -80,8 +82,36 @@ def fetch_audio(audio_url):
     else:
         raise Exception(f"下载失败，状态码: {response.status_code}")
 
+    convert_to_cbr(save_path)  # 转换为 CBR 格式，确保后续处理稳定
+
     logging.info(f"音频下载成功，保存路径: {save_path}")
     return save_path
+
+
+def convert_to_cbr(input_path):
+    """将下载的 VBR MP3 强制转换为 CBR (128k)，消除 Pydub 寻址 Bug"""
+    output_path = input_path.replace(".mp3", "_cbr.mp3")
+
+    # 调用系统 ffmpeg 进行标准重编码
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-codec:a",
+        "libmp3lame",
+        "-b:a",
+        "128k",  # 强行固定 128kbps 码率
+        output_path,
+    ]
+
+    # 隐藏控制台输出运行
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # 覆盖原文件
+    os.remove(input_path)
+    os.rename(output_path, input_path)
+    logging.info("音频已成功重构为标准 CBR 格式")
 
 
 def transcribe_audio_with_whisper(audio_path):
@@ -135,57 +165,113 @@ def transcribe_audio_with_whisper_mlx(audio_path):
     )
 
     # --- 新增的按句子合并逻辑 ---
-    merged_segments = []
-    current_start = None
-    current_text = ""
     transcript_text = ""
 
     # 这里的逻辑与原版完全保持一致，因为 MLX 返回的字典结构和原版 100% 相同
     segments = cast(List[Dict[str, Any]], result.get("segments", []))
 
-    for segment in segments:
-        # 去除文字前后的空格
-        text = segment.get("text", "").strip()
+    # 1. 先合并成短句
+    sentences = merge_into_short_sentences(segments)
+
+    # 2. 按时长打包（每个包 ≤30秒）
+    packages = pack_by_duration(sentences, max_duration=30.0)
+
+    # --- 重新格式化输出 ---
+    for idx, (start, end, text) in enumerate(packages):
+        start_rounded = round(start, 2)
+        end_rounded = round(end, 2)
+        transcript_text += (
+            f"[Line {idx + 1}] [{start_rounded} - {end_rounded}] {text}\n"
+        )
+
+    logging.info("文稿解析完成！")
+    return transcript_text, packages
+
+
+def merge_into_short_sentences(segments, max_sentence_duration=40.0):
+    """
+    将 whisper 片段按标点合并成短句（不含时长限制）
+    返回: [(start, end, text), ...]
+    """
+    COMMON_ABBREVIATIONS = {
+        "Mr",
+        "Mrs",
+        "Ms",
+        "Dr",
+        "Prof",
+        "vs",
+        "e.g",
+        "i.e",
+        "Inc",
+        "Corp",
+        "Ltd",
+    }
+
+    def is_sentence_end(t):
+        return bool(re.search(r'[.!?。？！][\'"\)\]\s]*$', t.strip()))
+
+    def is_abbrev(t):
+        m = re.match(r"^([A-Za-z\.]+)\.$", t.strip())
+        return m and m.group(1) in COMMON_ABBREVIATIONS
+
+    sentences = []
+    cur_start = None
+    cur_text = ""
+    for seg in segments:
+        text = seg.get("text", "").strip()
         if not text:
             continue
 
-        start = float(segment.get("start", 0))
-        end = float(segment.get("end", 0))
+        if cur_start is None:
+            cur_start = seg["start"]
 
-        # 如果是新句子的开头，记录起始时间
-        if current_start is None:
-            current_start = start
+        # 拼接文本
+        cur_text += " " + text if cur_text else text
 
-        # 拼接文本（英文单词之间加空格）
-        current_text = current_text + " " + text if current_text else text
+        # 当前累计时长（从 cur_start 到本片段结束）
+        current_duration = seg["end"] - cur_start
 
-        # 核心逻辑：如果当前片段的结尾是终结标点符号，就打包这一句！
-        if text.endswith((".", "?", "!", "。", "？", "！")):
-            merged_segments.append(
-                {"start": current_start, "end": end, "text": current_text}
-            )
-            # 重置状态，准备拼接下一句
-            current_start = None
-            current_text = ""
+        # 判断是否为正常句子结束（非缩写）或超时熔断
+        is_normal_end = is_sentence_end(text) and not is_abbrev(text)
+        is_timeout = current_duration >= max_sentence_duration
 
-    # 兜底逻辑：如果最后一段音频说完了但没有标点符号，也要强行打包
-    if current_text:
-        merged_segments.append(
-            {
-                "start": current_start,
-                "end": float(segments[-1].get("end", 0)),
-                "text": current_text,
-            }
-        )
+        if is_normal_end or is_timeout:
+            sentences.append((cur_start, seg["end"], cur_text.strip()))
+            cur_start = None
+            cur_text = ""
 
-    # --- 重新格式化输出 ---
-    for idx, segment in enumerate(merged_segments):
-        start = round(float(segment.get("start", 0)), 2)
-        end = round(float(segment.get("end", 0)), 2)
-        text = segment.get("text", "")
+    if cur_text and cur_start is not None:
+        sentences.append((cur_start, segments[-1]["end"], cur_text.strip()))
+    return sentences
 
-        # 输出格式保持不变：[Line 5] [12.5 - 15.0] The company reported...
-        transcript_text += f"[Line {idx + 1}] [{start} - {end}] {text}\n"
 
-    logging.info("文稿解析完成！")
-    return transcript_text, merged_segments
+def pack_by_duration(sentences, max_duration=30.0):
+    """
+    将短句列表按累计时长打包，每个包时长不超过 max_duration 秒
+    返回: [(start, end, combined_text), ...]
+    """
+    if not sentences:
+        return []
+    packages = []
+    cur_start = sentences[0][0]
+    cur_end = sentences[0][1]
+    cur_text = sentences[0][2]
+
+    for s in sentences[1:]:
+        s_start, s_end, s_text = s
+        # 如果加入当前句后总时长 <= max_duration，则合并
+        new_duration = s_end - cur_start
+        if new_duration <= max_duration:
+            cur_end = s_end
+            cur_text += " " + s_text
+        else:
+            # 超出限制，保存当前包，开始新包
+            packages.append((cur_start, cur_end, cur_text.strip()))
+            cur_start = s_start
+            cur_end = s_end
+            cur_text = s_text
+
+    # 最后一个包
+    if cur_text:
+        packages.append((cur_start, cur_end, cur_text.strip()))
+    return packages

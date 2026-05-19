@@ -80,7 +80,7 @@ SYSTEM_PROMPT = """你是一名英语语音训练专家。请从以下带时间�
 """
 
 PROMPT_JOURNAL = """
-你是一名英语语音与商业叙事训练专家。请从以下带时间戳的《The Journal.》播客转录文本中，筛选出 1-2 段最适合 Shadowing（影子跟读）的黄金片段。
+你是一名英语语音与商业叙事训练专家。请从以下带时间戳的《The Journal.》播客转录文本中，筛选出 2-4 段最适合 Shadowing（影子跟读）的黄金片段。
 
 【核心目标】
 聚焦于【叙事连贯性（Storytelling Flow）】、【意群停顿（Chunking）】与【戏剧性重音（Conversational Stress）】，帮助学生建立高级、有说服力的美式商务口语语感。
@@ -92,7 +92,7 @@ PROMPT_JOURNAL = """
     - 示例：✅ [Behind the Curtain: 独角兽神话的轰然倒塌] ❌ [Tech News: 某公司发布新AI模型]
 
 2. **Shadowing 片段筛选（硬性指标）**：
-    - 时长：严格控制在 **25~45 秒** 之间。
+    - 时长：严格控制在 **20~40 秒** 之间。
     - 文本偏好：优先选择主持人进行**事件转折、深度评论、因果论证**或**讲故事高潮**的段落。
     - 词汇偏好：必须富含高级口语连接词（如 "And that's when...", "Here is the catch...", "But it turns out..."）或高频商务表达。
     - 避开：纯数据罗列、长串人名地名、广告口播、多人口音混杂的采访录音。
@@ -155,7 +155,7 @@ def generate_shadowing_script(transcript: str, weekday: int):
             messages=[
                 {
                     "role": "system",
-                    "content": SYSTEM_PROMPT if weekday in [6, 0] else PROMPT_JOURNAL,
+                    "content": PROMPT_JOURNAL if weekday in [6, 0] else SYSTEM_PROMPT,
                 },
                 {"role": "user", "content": transcript},
             ],
@@ -191,12 +191,17 @@ def validate_snippets(data: Dict, whisper_segments: List[Dict]) -> List[Dict]:
         start_line = clip["start_line_id"]
         end_line = clip["end_line_id"]
 
+        # 检查行号是否存在且合法
+        if start_line is None or end_line is None:
+            logging.error("AI 返回缺少行号字段")
+            continue
+
         # 通过行号，直接从 whisper 原始数据中获取最精准的时间
         try:
             # 起始行的 start 时间
-            actual_start_sec = float(whisper_segments[start_line - 1].get("start", 0))
+            actual_start_sec = float(whisper_segments[start_line - 1][0])
             # 结束行的 end 时间
-            actual_end_sec = float(whisper_segments[end_line - 1].get("end", 0))
+            actual_end_sec = float(whisper_segments[end_line - 1][1])
         except IndexError:
             logging.error(f"AI 幻觉行号: {start_line} - {end_line}")
             continue

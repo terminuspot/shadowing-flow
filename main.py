@@ -27,11 +27,11 @@ def main():
     # 获取今天星期几 (0是周一，5是周六，6是周日)
     weekday = datetime.now().weekday()
     if weekday in [6, 0]:  # 如果是周末，使用 WSJ_RSS_MIN_URL
-        logging.info("Today is weekend, using WSJ_RSS_URL for fetching.")
-        rss_url = WSJ_RSS_URL
-    else:
-        logging.info("Today is weekday, using WSJ_RSS_MIN_URL for fetching.")
+        logging.info("Today is weekend, using WSJ_RSS_MIN_URL for fetching.")
         rss_url = WSJ_RSS_MIN_URL
+    else:
+        logging.info("Today is weekday, using WSJ_RSS_URL for fetching.")
+        rss_url = WSJ_RSS_URL
 
     # 步骤 1：从 RSS 拉取今天最新的 WSJ 播客音频
     episode_info = fetcher.fetch_latest_podcast(rss_url)
