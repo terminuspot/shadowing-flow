@@ -90,19 +90,19 @@ def fetch_audio(audio_url):
 
 def convert_to_cbr(input_path):
     """将下载的 VBR MP3 强制转换为 CBR (128k)，消除 Pydub 寻址 Bug"""
-    output_path = input_path.replace(".mp3", "_cbr.mp3")
+    output_path = input_path.with_name(f"{input_path.stem}_cbr.mp3")
 
     # 调用系统 ffmpeg 进行标准重编码
     cmd = [
         "ffmpeg",
         "-y",
         "-i",
-        input_path,
+        str(input_path),
         "-codec:a",
         "libmp3lame",
         "-b:a",
         "128k",  # 强行固定 128kbps 码率
-        output_path,
+        str(output_path),
     ]
 
     # 隐藏控制台输出运行
