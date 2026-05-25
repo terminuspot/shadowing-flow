@@ -30,21 +30,27 @@ MD_OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 CLIP_OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
 # 系统 Prompt
-SYSTEM_PROMPT = """你是一名英语语音训练专家。请从以下带时间戳的播客转录文本中，筛选 3-4 段最适合 Shadowing 的片段，每段时长控制在 20-40 秒。
+SYSTEM_PROMPT = """你是一名英语语音训练专家。请从以下带时间戳的播客转录文本中，筛选 3-4 段最适合 Shadowing 的片段，包含科技内容的关键信息，每段时长控制在 **15-30** 秒之间。
 
 【核心目标】
 训练重点切忌追求完美的美式发音或复杂的连读，而是必须聚焦于【意群停顿（Chunking）】与【逻辑重音（Stress）】，以英语表达的清晰度与专业感。
+
+【🚨 核心铁律：聚焦单一科技事件，严禁拼凑杂音】
+- **单一冲突主线**：如果片段涉及两家公司的纠纷、诉讼或竞争（如 Apple 限制 Meta 的广告追踪、Google 抢夺微软的 AI 市场），**完全允许两家公司同时出现**。但整段话必须**有且仅有一条因果逻辑链**。
+- **严禁快讯拼盘**：如果原稿在结束了“公司 A 与公司 B 的官司”后，下一行突然切入“公司 C 今天发布了新财报/新手机”，**必须在切入新公司前立刻截断**。
+- **判断标准**：这段话拆出来的 shadowing_text，必须能用一句完整的因果句概括（如：因为 A 封杀了 B，所以 B 决定起诉 A ）。
 
 【执行步骤】
 1. **内容归纳**：
     - 设定核心主题 `episode_theme`，必须严格执行格式：`[英文单词: 中文概括]`
         * 要求：抽象生动、具备行业深度，如 [Silicon Gambit: 巨头间的策略博弈]，严禁输出“新闻汇总”类直白词汇。
+        * 内容：更具悬念、更带“网感”或直戳痛点的表达，禁止平铺直叙，且要与选择的句子主题相关。
     - 英文控制在 2-4 词，中文控制在 9 字以内。
     - 提取 2-4 个与片段相关的子话题标签。
     - 禁止翻译公司名称、专有名词等，必须保留原文（如 "Apple"、"ChatGPT"、"Google"、"Meta"、"Intel"、"TSMC"、"Nintendo"、"AI regulation" 等）。
 
 2. **片段筛选与时间轴锚定**：
-    - 时长 20~40 秒（自然语速）
+    - 时长 15-30 秒（自然语速）
     - 发音清晰、句式完整、包含高频商务/科技/新闻表达
     - 连读/弱读/语调特征明显，适合模仿
     - 避开纯数据罗列、广告口播、多人快速插话或背景杂音段
@@ -59,14 +65,26 @@ SYSTEM_PROMPT = """你是一名英语语音训练专家。请从以下带时间�
         - 【禁止断句点】：严禁拆散紧密相关的语法结构（如名词短语、介词短语）。
         - 示例：✅ "you learned from your father /"  ❌ "you learned from / your father"
 
+4. **破局“零互动”**：
+        - ** 抛出一个问题 `arguement` **：
+            1. 极度具体、非黑即白、或者低门槛的观点表达，必须与本期内容高度相关，且具有明显的“立场感”。
+                - 例如：“马斯克和OpenAI相爱相杀，你这次站谁？”
+                - 目的：激发听众的情绪共鸣和参与欲望，鼓励他们在评论区表达观点，形成讨论氛围。
+            2. 互动型提问,鼓励听众分享个人经历或看法，必须与内容紧密相关。
+                - 例如：“Nvidia财报又爆了，你觉得AI泡沫今年会破吗？破（扣1）/ 不破（扣2）”
+                - 目的：通过引导听众分享个人经历，增强内容的共鸣感和实用性，促进听众之间的交流和互动。
+        - 观点型提问,针对内容中的某个争议点提出一个明确的立场问题，必须与内容紧密相关。
+        - 抛出的问题类型，选其中一个就可以，禁止同时输出多个问题类型。
+
 【输出要求】
 - 仅输出 JSON，禁止代码块外的文字。格式如下：
 
 {
     "episode_theme": "[英文词组: 中文概括]",
+    "arguement": “针对本期内容提出的一个具体、立场鲜明的问题，鼓励听众在评论区参与讨论。”,
     "snippets": [
         {
-            "topic_tag": "子话题标签",
+            "topic_tag": "子话题标签（如 '单一公司名+动态'）",
             "title": "6字内标题",
             "start_line_id": 12,   // 必须为整数，如选中的起始行是 [Line 12]
             "end_line_id": 18,     // 必须为整数，如选中的结束行是 [Line 18]
@@ -80,10 +98,14 @@ SYSTEM_PROMPT = """你是一名英语语音训练专家。请从以下带时间�
 """
 
 PROMPT_JOURNAL = """
-你是一名英语语音与商业叙事训练专家。请从以下带时间戳的《The Journal.》播客转录文本中，筛选出 2-4 段最适合 Shadowing（影子跟读）的黄金片段。
+你是一名英语语音与商业叙事训练专家。请从以下带时间戳的《The Journal.》播客转录文本中，筛选出 2-4 段最适合 Shadowing（影子跟读）的黄金片段，包含关键的科技信息。
 
 【核心目标】
 聚焦于【叙事连贯性（Storytelling Flow）】、【意群停顿（Chunking）】与【戏剧性重音（Conversational Stress）】，帮助学生建立高级、有说服力的美式商务口语语感。
+
+【🚨 铁律：公司主体绝对隔离（Entity Isolation）】
+- **单一主体原则**：每个筛选出的 Snippet（片段）在语义上**必须且只能聚焦于一家公司或一个核心商业主体**（例如：只聊 Apple，或者只聊 Carvana）。
+- **严禁跨公司拼接**：如果原始文稿在某一行突然切换到了另一家公司（如从 Carvana 切换到了 Stellantis / Tesla 的对比竞争），**必须在此处立刻截断**，严禁将两个不同公司主体的动态、财报或新闻混在同一个 Snippet 里面。
 
 【执行步骤与筛选标准】
 1. **深度主题归纳**：
@@ -92,7 +114,7 @@ PROMPT_JOURNAL = """
     - 示例：✅ [Behind the Curtain: 独角兽神话的轰然倒塌] ❌ [Tech News: 某公司发布新AI模型]
 
 2. **Shadowing 片段筛选（硬性指标）**：
-    - 时长：严格控制在 **20~40 秒** 之间。
+    - 时长：严格控制在 **15-30秒** 之间。
     - 文本偏好：优先选择主持人进行**事件转折、深度评论、因果论证**或**讲故事高潮**的段落。
     - 词汇偏好：必须富含高级口语连接词（如 "And that's when...", "Here is the catch...", "But it turns out..."）或高频商务表达。
     - 避开：纯数据罗列、长串人名地名、广告口播、多人口音混杂的采访录音。
@@ -105,14 +127,26 @@ PROMPT_JOURNAL = """
         示例：✅ "But inside the company, / tensions were building. /" 
             ❌ "But inside the / company, tensions / were building. /"
 
+4. **破局“零互动”**：
+        - ** 抛出一个问题 `arguement` **：
+            1. 极度具体、非黑即白、或者低门槛的观点表达，必须与本期内容高度相关，且具有明显的“立场感”。
+                - 例如：“马斯克和OpenAI相爱相杀，你这次站谁？”
+                - 目的：激发听众的情绪共鸣和参与欲望，鼓励他们在评论区表达观点，形成讨论氛围。
+            2. 互动型提问,鼓励听众分享个人经历或看法，必须与内容紧密相关。
+                - 例如：“Nvidia财报又爆了，你觉得AI泡沫今年会破吗？破（扣1）/ 不破（扣2）”
+                - 目的：通过引导听众分享个人经历，增强内容的共鸣感和实用性，促进听众之间的交流和互动。
+        - 观点型提问,针对内容中的某个争议点提出一个明确的立场问题，必须与内容紧密相关。
+        - 抛出的问题类型，选其中一个就可以，禁止同时输出多个问题类型。
+
 【输出要求】
 - 仅输出 JSON，禁止代码块外的文字。格式如下：
 
 {
     "episode_theme": "[英文词组: 中文概括]",
+    "arguement": “针对本期内容提出的一个具体、立场鲜明的问题，鼓励听众在评论区参与讨论。”,
     "snippets": [
         {
-            "topic_tag": "子话题标签",
+            "topic_tag": "子话题标签（如 '单一公司名+动态'）",
             "title": "6字内标题",
             "start_line_id": 12,   // 必须为整数，如选中的起始行是 [Line 12]
             "end_line_id": 18,     // 必须为整数，如选中的结束行是 [Line 18]
@@ -187,7 +221,18 @@ def validate_snippets(data: Dict, whisper_segments: List[Dict]) -> List[Dict]:
         raise ValueError("响应中未找到有效的 'snippets' 列表")
 
     valid_clips = []
-    for clip in snippets:
+    for idx, clip in enumerate(snippets):
+        logging.info(
+            {
+                "event": "ai_snippet_received",
+                "snippet_index": idx + 1,
+                "topic_tag": clip.get("topic_tag"),
+                "requested_start_line": clip.get("start_line_id"),
+                "requested_end_line": clip.get("end_line_id"),
+                "title": clip.get("title"),
+            }
+        )
+
         start_line = clip["start_line_id"]
         end_line = clip["end_line_id"]
 
@@ -252,6 +297,20 @@ def process_audio_and_markdown(
         clip_path = CLIP_OUTPUT_FOLDER / clip_filename
         audio_clip.export(clip_path, format="mp3")
 
+        actual_duration_ms = end_ms - start_ms
+        logging.info(
+            {
+                "event": "pydub_slice_executed",
+                "clip_title": clip.get("title"),
+                "target_file": f"shadowing_clip_{idx + 1}.mp3",
+                "start_ms": start_ms,
+                "end_ms": end_ms,
+                "duration_sec": round(actual_duration_ms / 1000, 2),
+                "is_over_limit": actual_duration_ms
+                > 35000,  # 如果超过35秒，触发布尔标记方便检索
+            }
+        )
+
         # 生成 Markdown 内容
         key_phrases_str = ", ".join(clip.get("key_phrases", []))
         md_content.append(
@@ -266,6 +325,8 @@ def process_audio_and_markdown(
                 practice_focus=clip.get("practice_focus", ""),
             )
         )
+
+    md_content.append(f">话题讨论：{snippets_info.get('arguement', '未知')}")
 
     # 保存 Markdown 文件
     md_filename = f"{audio_name}.md"

@@ -82,15 +82,15 @@ def fetch_audio(audio_url):
     else:
         raise Exception(f"下载失败，状态码: {response.status_code}")
 
-    convert_to_cbr(save_path)  # 转换为 CBR 格式，确保后续处理稳定
+    output_path = convert_to_cbr(save_path)  # 转换为 CBR 格式，确保后续处理稳定
 
-    logging.info(f"音频下载成功，保存路径: {save_path}")
-    return save_path
+    logging.info(f"音频下载成功，保存路径: {save_path} \n {output_path}")
+    return output_path
 
 
 def convert_to_cbr(input_path):
     """将下载的 VBR MP3 强制转换为 CBR (128k)，消除 Pydub 寻址 Bug"""
-    output_path = input_path.with_name(f"{input_path.stem}_cbr.mp3")
+    output_path = input_path.with_name(f"{input_path.stem}_cbr.wav")
 
     # 调用系统 ffmpeg 进行标准重编码
     cmd = [
@@ -98,20 +98,25 @@ def convert_to_cbr(input_path):
         "-y",
         "-i",
         str(input_path),
-        "-codec:a",
-        "libmp3lame",
-        "-b:a",
-        "128k",  # 强行固定 128kbps 码率
+        "-ar",
+        "16000",  # 采样率 16kHz
+        "-ac",
+        "1",  # 单声道
+        "-c:a",
+        "pcm_s16le",  # PCM 16bit
         str(output_path),
     ]
 
     # 隐藏控制台输出运行
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+    )
 
     # 覆盖原文件
     os.remove(input_path)
-    os.rename(output_path, input_path)
+    # os.rename(output_path, input_path)
     logging.info("音频已成功重构为标准 CBR 格式")
+    return output_path
 
 
 def transcribe_audio_with_whisper(audio_path):
