@@ -42,7 +42,7 @@ def main():
     # 步骤 2：下载音频文件，用本地 Whisper 听写音频，生成带时间戳的精准文稿
     audio_path = fetcher.fetch_audio(episode_info["audio_url"])
     # transcript, segments = transfer.transcribe_audio_with_whisper_mlx(audio_path)
-    transcript, segments = transfer_ts.transcribe_audio_with_whisper_timestamped(
+    transcript, segments = transfer_ts.transcribe_audio_with_whisper_timestamped2(
         audio_path
     )
 

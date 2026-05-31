@@ -3,6 +3,88 @@ import logging
 import whisper_timestamped as whisper
 
 
+def transcribe_audio_with_whisper_timestamped2(audio_path):
+    """
+    使用 whisper-timestamped 高精度单词流模型进行识别
+    """
+    logging.info("正在启动本地 Whisper-Timestamped 高精度模型...")
+    model = whisper.load_model("base", device="cpu")
+
+    result = whisper.transcribe(
+        model,
+        str(audio_path),
+        beam_size=5,
+        best_of=5,
+        temperature=0.0,
+        vad=True,
+    )
+
+    raw_segments = result.get("segments", [])
+
+    # --- 第一阶段：纯净单词流（保留你的原代码，极其优秀） ---
+    all_words = []
+    for seg in raw_segments:
+        for w in seg.get("words", []):
+            all_words.append(
+                {
+                    "word": w["text"].strip(),
+                    "start": float(w["start"]),
+                    "end": float(w["end"]),
+                }
+            )
+
+    # 物理层去重...
+    all_words.sort(key=lambda x: x["start"])
+    clean_words = [all_words[0]]
+    for next_w in all_words[1:]:
+        last_w = clean_words[-1]
+        if next_w["start"] < last_w["end"]:
+            if next_w["word"].lower() == last_w["word"].lower():
+                continue
+            next_w["start"] = last_w["end"]
+        if next_w["end"] > next_w["start"]:
+            clean_words.append(next_w)
+
+    # --- 第二阶段：组装细粒度短句 ---
+    sentences = []
+
+    def is_sentence_end(text):
+        return bool(re.search(r'[.!?。？！][\'"\)\]\s]*$', text))
+
+    cur_start = None
+    cur_text = []
+
+    for w in clean_words:
+        if cur_start is None:
+            cur_start = w["start"]
+        cur_text.append(w["word"])
+
+        # ⭐ 修改点 1：将 40.0 秒防熔断改为 12.0 秒。确保给 AI 的每行切片非常精细！
+        if is_sentence_end(w["word"]) or (w["end"] - cur_start >= 12.0):
+            sentences.append((cur_start, w["end"], " ".join(cur_text)))
+            cur_start = None
+            cur_text = []
+
+    if cur_text and cur_start is not None:
+        sentences.append((cur_start, clean_words[-1]["end"], " ".join(cur_text)))
+
+    # --- 第三阶段：直接绕过物理装箱，输出细粒度文本给大模型 ---
+    # ⭐ 修改点 2：直接使用 sentences 组装发给 DeepSeek 的文本！
+    transcript_text = ""
+    for idx, (start, end, text) in enumerate(sentences):
+        start_rounded = round(start, 2)
+        end_rounded = round(end, 2)
+        # 不要加 [Line X]，直接给出精确时间戳，大模型对原生时间范围更敏感
+        transcript_text += f"[{start_rounded} - {end_rounded}] {text}\n"
+
+    logging.info(
+        f"高精度文稿解析完成！共切分出 {len(sentences)} 句细粒度文稿交由大模型提取。"
+    )
+
+    # 依然可以把 sentences（或你原本的 packages）返回，供下游程序其他地方使用
+    return transcript_text, sentences
+
+
 def transcribe_audio_with_whisper_timestamped(audio_path, max_duration=25.0):
     """
     使用 whisper-timestamped 高精度单词流模型进行识别
