@@ -75,7 +75,9 @@ def transcribe_audio_with_whisper_timestamped2(audio_path):
         start_rounded = round(start, 2)
         end_rounded = round(end, 2)
         # 不要加 [Line X]，直接给出精确时间戳，大模型对原生时间范围更敏感
-        transcript_text += f"[{start_rounded} - {end_rounded}] {text}\n"
+        transcript_text += (
+            f"[Line {idx + 1}]  [{start_rounded} - {end_rounded}] {text}\n"
+        )
 
     logging.info(
         f"高精度文稿解析完成！共切分出 {len(sentences)} 句细粒度文稿交由大模型提取。"
